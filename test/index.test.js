@@ -22,7 +22,7 @@ function sum(a, b) {
 
 
 const BACKEND_URL = "http://localhost:3000"
-const WS_URL = "ws://localhost:3000"
+const WS_URL = "ws://localhost:3001"
 
 describe("Authentication",  () => {
     test("User is able to signup", async ()=> {
@@ -830,7 +830,30 @@ describe("WebSocket Tests", () => {
     let userToken
     let adminUserId
     let userId
-    beforeAll( async () => {
+    let mapId
+    let element1Id
+    let element2Id
+    let spaceId
+    let ws1
+    let ws2
+    let ws1Messages = []
+    let ws2Messages = []
+
+    async function awaitForAndPopLatestMessage(messageArray) {
+        return new Promise(r => {
+            if (messageArray.length > 0) {
+                return messageArray.shift()
+            } else  {
+                setTimeout(() => {
+                    if (messageArray.length > 0) {
+                       resolve( messageArray.shift())
+                    }
+                }, 100)
+            }
+        }) 
+    }
+
+    async function setupHTTP() {
         const username = `Yash-${Math.random()}`
         const password = "123455"
         const adminSignupResponse = await axios.post(`${BACKEND_URL}/aapi/v1/signup`,{
@@ -860,5 +883,98 @@ describe("WebSocket Tests", () => {
 
         userId = userSignupResponse.data.userId
         userToken = userSigninResponse.data.token
-    })
+
+        const element1Response = axios.post(`${BACKEND_URL}/api/v1/admin/element`, {
+
+            "imageUrl":"",
+            "width" : 1,
+            "height" : 1,
+            "static" : true
+        }, {
+            headers:{
+                "Authorization": `Bearer ${adminToken}`
+            }
+        })
+
+
+        const element2Response = axios.post(`${BACKEND_URL}/api/v1/admin/element`, {
+
+            "imageUrl":"",
+            "width" : 1,
+            "height" : 1,
+            "static" : true
+        }, {
+            headers:{
+                "Authorization": `Bearer ${adminToken}`
+            }
+        })
+        element1Id = element1Response.data.id
+        element2Id = element2Response.data.id
+
+        const mapResponse = await axios.post(`${BACKEND_URL}/api/v1/admin/map`,{
+            "thumbnail": "https://thumbnail.com/a.png",
+            "dimensions": "100x200",
+            "defaultElements":[
+            {
+                elementId: element1Id,
+                x: 20,
+                y: 20,
+            },
+            {
+                elementId: element1Id,
+                x: 18,
+                y: 20,
+            },
+            {
+                elementId: element2Id,
+                x: 19,
+                y: 20,
+            },
+        ]
+        },{
+            headers:{
+                "Authorization": `Bearer ${adminToken}`
+                }
+        })
+
+        mapId = mapResponse.id
+
+        const spaceResponse = await axios.post(`${BACKEND_URL}/api/v1/`, {
+            "name": "test",
+            "dimension" : "100x200",
+            "mapId": mapId
+        },{
+            headers: {
+                "Authorization": `Bearer ${userToken}`
+            }
+        })
+
+        spaceId = spaceResponse.data.spaceId
+    }
+    async function  setupWs() {
+        ws1 = new WebSocket(WS_URL)
+        ws2 =  new WebSocket(WS_URL)
+
+        await new Promise (r => {
+            ws1.onopen = r
+        })
+        await new Promise (r => {
+            ws2.onopen = r
+        })
+
+        ws1.onmessage = () => {
+            ws1Messages.push(JSON.parse(event.data))
+        }
+        ws2.onmessage = () => {
+            ws2Messages.push(JSON.parse(event.data))
+        }
+
+    }
+
+
+    beforeAll( async () => {
+        
+})
+
+    
 } )
