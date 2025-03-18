@@ -838,15 +838,20 @@ describe("WebSocket Tests", () => {
     let ws2
     let ws1Messages = []
     let ws2Messages = []
+    let userX
+    let userY
+    let adminX
+    let adminY
 
     async function awaitForAndPopLatestMessage(messageArray) {
         return new Promise(r => {
             if (messageArray.length > 0) {
-                return messageArray.shift()
+                resolve( messageArray.shift())
             } else  {
-                setTimeout(() => {
+                let interval = setTimeout(() => {
                     if (messageArray.length > 0) {
-                       resolve( messageArray.shift())
+                       resolve  ( messageArray.shift())
+                       clearInterval(interval)
                     }
                 }, 100)
             }
@@ -953,28 +958,128 @@ describe("WebSocket Tests", () => {
     }
     async function  setupWs() {
         ws1 = new WebSocket(WS_URL)
-        ws2 =  new WebSocket(WS_URL)
-
+        
         await new Promise (r => {
             ws1.onopen = r
         })
-        await new Promise (r => {
-            ws2.onopen = r
-        })
-
         ws1.onmessage = () => {
             ws1Messages.push(JSON.parse(event.data))
         }
+
+        ws2 =  new WebSocket(WS_URL)
+
+        await new Promise (r => {
+            ws2.onopen = r
+        })
+        
         ws2.onmessage = () => {
             ws2Messages.push(JSON.parse(event.data))
         }
 
+        
     }
 
 
     beforeAll( async () => {
-        
+        setupHTTP()
+        setupWs()
 })
 
-    
+test("Get back ack for joining the space ", async () => {
+    ws1.send(JSON.stringify({
+        "type": "join",
+        "payload": {
+            "spaceId": spaceId,
+            "token" : adminToken
+        }
+    }))
+    const message1 = await awaitForAndPopLatestMessage(ws1Messages)
+
+    ws2.send(JSON.stringify({
+        "type": "join",
+        "payload": {
+            "spaceId": spaceId,
+            "token" : adminToken
+        }
+    }))
+
+    const message2 =  await awaitForAndPopLatestMessage(ws2Messages)
+    const message3 =  await awaitForAndPopLatestMessage(ws1Messages)
+
+    expect(message1.type).toBe("space-joined")
+    expect(message2.type).toBe("space-joined")
+
+    expect(message1.payload.users.length).toBe(0)
+    expect(message2.payload.users.length).toBe(1)
+    expect(message3.type).toBe("user-join")
+    expect(message3.payload.x).toBe(message2.payload.spawn.x)
+    expect(message3.payload.y).toBe(message2.payload.spawn.y)
+    expect(message3.payload.userId).toBe(userId)
+
+    adminX = message1.payload.spawn.x
+    adminY = message1.payload.spawn.y
+
+    userX = message2.payload.spawn.x
+    userY = message2.payload.spawn.y
+
+
+
+})
+
+
+test ("user should not able to move accross the boundaries", async () => {
+    ws1.send(JSON.stringify({
+        type: "movement",
+        payload:{
+            x:100000,
+            y:100000
+        }
+    }))
+
+    const message = await awaitForAndPopLatestMessage(ws1Messages)
+    expect(message.type).toBe("movement-rejected")
+    expect(message.payload.x).toBe(adminX)
+    expect(message.payload.y).toBe(adminY)
+})
+
+test ("user should not able to move accross the boundaries", async () => {
+    ws1.send(JSON.stringify({
+        type: "movement",
+        payload:{
+            x:100000,
+            y:100000
+        }
+    }))
+
+    const message = await awaitForAndPopLatestMessage(ws1Messages)
+    expect(message.type).toBe("movement-rejected")
+    expect(message.payload.x).toBe(adminX)
+    expect(message.payload.y).toBe(adminY)
+})
+
+test ("Correct movement should be broadcasted to the other socket in the room ", async () => {
+    ws1.send(JSON.stringify({
+        type: "movement",
+        payload:{
+            x: adminX + 1,
+            y:adminY,
+            userId: adminId
+        }
+    }))
+
+    const message = await awaitForAndPopLatestMessage(ws2Messages)
+    expect(message.type).toBe("movement")
+    expect(message.payload.x).toBe(adminX + 1)
+    expect(message.payload.y).toBe(adminY)
+})
+
+test ("if a user leave , the other user recieve a leave event ", async () => {
+    ws1.close()
+
+    const message = await awaitForAndPopLatestMessage(ws2Messages)
+    expect(message.type).toBe("user-left")
+    expect(message.payload.userId).toBe(adminUserId)
+
+})
+
 } )
